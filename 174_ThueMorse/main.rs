@@ -7,23 +7,7 @@ extern crate test;
 use std::os;
 
 mod tm_seq {
-    pub mod direct {
-        /*
-           the n'th element of tm(n) can be determined by counting the number of 1's present in the
-           binary representation of 'n'. If it is even, tm(n) = 0, if odd, tm(n) = 1
-         */
-        pub fn is_odious_check(n: &uint) -> bool {
-            //from John H Conway et al. odius = a number whose binary rep. has an odd number of 1's
-            let mut num = *n;
-            let mut sum = 0u;
-            while num != 0 {
-                sum = (num & 1) + sum;
-                num = num >> 1;
-            }
-            (sum % 2 == 1)
-        }
-
-        pub fn is_odd_check(n: &uint) -> bool {
+        fn is_odd(n: &uint) -> bool {
             let mut num = *n;
             let mut count = 0u;
             while num != 0 {
@@ -33,7 +17,7 @@ mod tm_seq {
             (count % 2 == 1)
         }
 
-        pub fn get_seq(is_odd: fn(&uint)->bool, num: uint) {
+        pub fn get_seq(num: uint) {
             assert!(num < 64);
             println!("Thun-Morse({}) =", num);
             for i in range(0u, (1 << num)) {
@@ -45,35 +29,10 @@ mod tm_seq {
             }
             println!("");
         }
-    }
 }
 
 fn main() {
-    for arg in os::args().iter() {
-        let input: Option<uint> = from_str(arg.as_slice());
-        if input.is_none() {
-            continue;
-        }
-        let input = input.expect("Not a number");
-        tm_seq::direct::get_seq(tm_seq::direct::is_odd_check, input);
-    }
+    let input = from_str(os::args()[1].as_slice()).expect("Not a number");
+    tm_seq::get_seq(input);
 }
 
-#[cfg(test)]
-mod testee {
-    use test::Bencher;
-    use tm_seq::direct;
-
-    static BENCH_SIZE: uint = 20;
-
-#[bench]
-    fn bench_odd(b: &mut Bencher) {
-        b.iter(|| {for i in range(0u, (1 << BENCH_SIZE)) {direct::is_odd_check(&i);}})
-    }
-
-#[bench]
-    fn bench_odious(b: &mut Bencher) {
-        b.iter(|| {for i in range(0u, (1 << BENCH_SIZE)) {direct::is_odious_check(&i);}})
-    }
-
-}
