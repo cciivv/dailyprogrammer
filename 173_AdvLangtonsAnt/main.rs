@@ -85,12 +85,13 @@ struct Plane {
 
 impl Plane {
     fn new(instruction: &String) -> Plane {
-        let mid = 7u;
+        let mid = 20u;
 
         let mut tiles = Vec::with_capacity(instruction.len());
         tiles.grow_fn(instruction.len(), |i| {
                 Tile {
-                    color: ((255 / (instruction.len()-1))*i) as u8,
+                   // color: ((255 / (instruction.len()-1))*i) as u8,
+                    color : i as u8,
                     rotation: match instruction.as_slice().char_at(i) {
                         'L'|'l' => CCW,
                         'R'|'r' => CW,
@@ -124,10 +125,24 @@ impl Plane {
         *self.board.get_mut(pos.x).get_mut(pos.y) = tile;
     }
 }
+fn csi(f: &mut Formatter) {
+    write!(f, "{}[", '\x1B');
+}
+fn set_bg_color(f: &mut Formatter, offset: u8) {
+    csi(f);
+    write!(f, "{}m", 40 + offset);
+}
+fn reset_graphics(f: &mut Formatter) {
+    csi(f);
+    write!(f, "0m");
+}
+
 impl Show for Plane {
     fn fmt(&self, f: &mut Formatter) -> Result<(), FormatError> {
+        reset_graphics(f);
         for x_vec in self.board.iter() {
             for value in x_vec.iter() {
+                set_bg_color(f, self.tiles[*value].color);
                 write!(f, "{} ", value);
             }
             write!(f, "\n");
@@ -149,6 +164,6 @@ fn main() {
         plane.flip_tile(ant.pos);
         ant.move(plane.dim);
     }
-
     println!("{}", plane);
+
 }
