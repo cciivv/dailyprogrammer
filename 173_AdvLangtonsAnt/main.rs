@@ -85,7 +85,7 @@ struct Plane {
 
 impl Plane {
     fn new(instruction: &String) -> Plane {
-        let mid = 20u;
+        let mid = 40u;
 
         let mut tiles = Vec::with_capacity(instruction.len());
         tiles.grow_fn(instruction.len(), |i| {
@@ -147,6 +147,7 @@ impl Show for Plane {
             }
             write!(f, "\n");
         }
+        reset_graphics(f);
         write!(f, "\n")
     }
 }
