@@ -143,7 +143,7 @@ impl Show for Plane {
         for x_vec in self.board.iter() {
             for value in x_vec.iter() {
                 set_bg_color(f, self.tiles[*value].color);
-                write!(f, "{} ", value);
+                write!(f, "@ ");
             }
             write!(f, "\n");
         }
