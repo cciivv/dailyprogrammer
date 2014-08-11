@@ -25,6 +25,7 @@ use std::hash::sip::SipState;
 use std::hash::Hash;
 use std::rand;
 use std::rand::{IsaacRng, Rng};
+use std::io::File;
 
 fn sel_u8_from(data:uint, offset: uint) -> u8 {
     (data >> offset) as u8
@@ -69,7 +70,6 @@ impl<T: Clone> BoundedMask<T> {
     fn new(rng: &mut IsaacRng, set: &Vec<Vec<T>>, mask_size: uint, offset: uint) -> BoundedMask<T> {
 
         assert!(!set.is_empty());
-        let num_items = set[0].len();
 
         let data = rng.choose(set.as_slice()).unwrap().clone();
 
@@ -99,8 +99,14 @@ struct Avatar {
 
 impl Avatar {
     fn new(colors: &Vec<Vec<Color>>, hash: u64, dim: uint, rng: &mut IsaacRng) -> Avatar {
-        let color_mask = BoundedMask::new(rng, colors, 4, 1);
-        Avatar {dim: 0u, image: Vec::new()}
+        let color_mask = BoundedMask::new(rng, colors, 4, 0);
+        let image = Vec::from_fn(dim*dim, |i| {
+                                if i % 3 == 0 {
+                                    Color::new("rgb888", 0xFF00FF)
+                                } else {
+                                    Color::new("rgb888", 0x00FF00)
+                                }});
+        Avatar {dim: dim, image: image}
     }
 }
 
@@ -126,7 +132,21 @@ fn main() {
     for arg in args.iter() {
         arg.hash(&mut sip);
         let hash = sip.result();
-        let image = Avatar::new(&color_pairs, hash, 64, &mut rng);
+        let avatar = Avatar::new(&color_pairs, hash, 64, &mut rng);
+        let mut file = File::create(&Path::new(format!("{}.txt",arg)));
+        write!(file, "P6\n{dim} {dim}\n{maxval}\n", dim = avatar.dim, maxval = 255u);
+        assert_eq!(avatar.image.len(), avatar.dim * avatar.dim);
+        for c in avatar.image.iter() {
+        //*
+            file.write_u8(c.r);
+            file.write_u8(c.g);
+            file.write_u8(c.b);
+        //*/
+        /* Glitch'd write
+            write!(file, "{}{}{}", c.r as char, c.g as char, c.b as char);
+        */
+        }
+        println!("made avatar for {}", arg);
     }
 
     for group in color_pairs.iter() {
