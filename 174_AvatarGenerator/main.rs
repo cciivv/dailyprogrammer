@@ -21,6 +21,10 @@
 
  */
 use std::os;
+use std::hash::sip::SipState;
+use std::hash::Hash;
+use std::rand;
+use std::rand::{IsaacRng, Rng};
 
 fn sel_u8_from(data:uint, offset: uint) -> u8 {
     (data >> offset) as u8
@@ -30,6 +34,12 @@ struct Color {
     r: u8,
     g: u8,
     b: u8,
+}
+
+impl Clone for Color {
+    fn clone(&self) -> Color {
+        Color { r: self.r, g: self.g, b: self.b}
+    }
 }
 
 impl Color {
@@ -46,35 +56,78 @@ impl Color {
 }
 
 trait Selector<T> {
-    fn select(&self, data: u32) -> T;
+    fn select(&self, input: uint) -> T;
 }
 
-struct BoundedMask {
-    index: uint,
+struct BoundedMask<T> {
+    data: Vec<T>,
     bounds: Vec<uint>,
     mask: uint,
     offset: uint,
 }
-/*
-impl Selector for BoundedMask<T> {
-    fn select(&self, input: u32, data:Vec<Vec<T>>) -> T {
-        assert!(!data.is_empty());
-        assert_eq!(self.bounds.len(), data[0].len());
-        let i = 0u;
-        while i < self.bounds.len() &&
-                ((input >> self.offset) & self.mask) < self.bounds[i] {i += 1;}
-        data[self.index][i]
+impl<T: Clone> BoundedMask<T> {
+    fn new(rng: &mut IsaacRng, set: &Vec<Vec<T>>, mask_size: uint, offset: uint) -> BoundedMask<T> {
+
+        assert!(!set.is_empty());
+        let num_items = set[0].len();
+
+        let data = rng.choose(set.as_slice()).unwrap().clone();
+
+        let mask = (1 << mask_size) - 1;
+
+        let mut bounds = Vec::new();
+        bounds.push(rng.gen_range(1u, mask));
+
+        BoundedMask { data: data, bounds: bounds, mask: mask, offset: offset}
     }
 }
-*/
-fn main() {
 
-    let color_pairs: [[Color, ..2], ..4] = [
-                [Color::new("rgb888", 0xEDB231u),Color::new("rgb888", 0x4AF0A9u)],
-                [Color::new("rgb888", 0x77E761u),Color::new("rgb888", 0xA1DFE1u)],
-                [Color::new("rgb888", 0x8E14BAu),Color::new("rgb888", 0x4AF0A9u)],
-                [Color::new("rgb888", 0x0D5799u),Color::new("rgb888", 0xFF4C22u)],
-                ];
+impl<T: Clone> Selector<T> for BoundedMask<T> {
+    fn select(&self, input: uint) -> T {
+        assert!(!self.data.is_empty());
+        let mut i = 0u;
+        while i < self.bounds.len() &&
+                ((input >> self.offset) & self.mask) < self.bounds[i] {i += 1;}
+        self.data[i].clone()
+    }
+}
+
+struct Avatar {
+    dim: uint,
+    image: Vec<Color>
+}
+
+impl Avatar {
+    fn new(colors: &Vec<Vec<Color>>, hash: u64, dim: uint, rng: &mut IsaacRng) -> Avatar {
+        let color_mask = BoundedMask::new(rng, colors, 4, 1);
+        Avatar {dim: 0u, image: Vec::new()}
+    }
+}
+
+fn main() {
+    let mut color_pairs = Vec::new();
+    color_pairs.push(Vec::from_slice(
+                [Color::new("rgb888", 0xEDB231u),Color::new("rgb888", 0x4AF0A9u)]
+                ));
+    color_pairs.push(Vec::from_slice(
+                [Color::new("rgb888", 0x77E761u),Color::new("rgb888", 0xA1DFE1u)]
+                ));
+    color_pairs.push(Vec::from_slice(
+                [Color::new("rgb888", 0x8E14BAu),Color::new("rgb888", 0x4AF0A9u)]
+                ));
+    color_pairs.push(Vec::from_slice(
+                [Color::new("rgb888", 0x0D5799u),Color::new("rgb888", 0xFF4C22u)]
+                ));
+
+    let args = os::args();
+    let args = args.tail();
+    let mut sip = SipState::new_with_keys(0xFEED_DEAD_BEEF_BAFFu64, 0xDEAD_BEE5_DECA_DE00u64);
+    let mut rng = IsaacRng::new_unseeded();
+    for arg in args.iter() {
+        arg.hash(&mut sip);
+        let hash = sip.result();
+        let image = Avatar::new(&color_pairs, hash, 64, &mut rng);
+    }
 
     for group in color_pairs.iter() {
         println!("Color group");
