@@ -66,12 +66,11 @@ impl<T: Clone> BoundedMask<T> {
 
         assert!(!set.is_empty());
 
-        let data = rng.choose(set.as_slice()).unwrap().clone();
-
         let mask = (1 << mask_size) - 1;
 
-        let mut bounds = Vec::new();
-        bounds.push(rng.gen_range(1u, mask + 1));
+        let data = rng.choose(set.as_slice()).unwrap().clone();
+
+        let bounds = Vec::from_fn(data.len() - 1, |_| {rng.gen_range(0u, mask)});
 
         BoundedMask { data: data, bounds: bounds, mask: mask, offset: offset}
     }
@@ -80,7 +79,7 @@ impl<T: Clone> BoundedMask<T> {
         assert!(!self.data.is_empty());
         let mut i = 0u;
         while i < self.bounds.len() &&
-                ((input >> self.offset) & self.mask) <= self.bounds[i] {i += 1;}
+                ((input >> self.offset) & self.mask) < self.bounds[i] {i += 1;}
         self.data[i].clone()
     }
 }
@@ -125,27 +124,24 @@ impl SquarePosition {
     }
 }
 
-// TODO, no way to guarantee that pattern will cover area... possibly have a "flood" method run after pattern to make sure bad patterns don't leave uncovered area.
 trait IterativePattern {
     fn new(Position) -> Self;
     fn place(&self, uint) -> Position;
     fn step(&self, Position) -> Position;
-    fn tessle(&self, uint, |Position|);
     fn required_size(&self) -> uint;
+    fn iter(&self) -> uint;
 }
 
 struct WindmillPattern {
     out: Position,
-    run: uint,
     iter: uint
 }
-
 impl IterativePattern for WindmillPattern {
     fn new(output_dim: Position) -> WindmillPattern {
         assert!(output_dim.x() % 2 == 0);
         assert!(output_dim.y() % 2 == 0);
 
-        WindmillPattern{ out: output_dim, run: 0u, iter: 4u}
+        WindmillPattern{ out: output_dim, iter: 4u}
     }
 
     fn place(&self, input: uint) -> Position {
@@ -160,16 +156,77 @@ impl IterativePattern for WindmillPattern {
         Position::new( (new_x as uint, temp.y()))
     }
 
-    fn tessle(&self, p: uint, cl: |Position|) {
-        let mut pos = self.place(p);
-        for _ in range(0u, self.iter) {
-            cl(pos);
-            pos = self.step(pos);
-        }
+    fn required_size(&self) -> uint {
+        self.out.area() / 4
+    }
+
+    fn iter(&self) -> uint {
+        self.iter
+    }
+}
+
+struct VertMirrorPattern {
+    out: Position,
+    iter: uint
+}
+impl IterativePattern for VertMirrorPattern {
+    fn new(output_dim: Position) -> VertMirrorPattern {
+        VertMirrorPattern{ out: output_dim, iter: 2u}
+    }
+
+    fn place(&self, input: uint) -> Position {
+        let x_win = self.out.x() / 2;
+        Position::new((input % x_win, input / x_win))
+    }
+
+    fn step(&self, input: Position) -> Position {
+        let x_bound = self.out.x() / 2;
+        let new_x = (x_bound - 1) + (x_bound - input.x());
+        Position::new((new_x, input.y()))
     }
 
     fn required_size(&self) -> uint {
-        self.out.area() / 4
+        self.out.area() / 2
+    }
+
+    fn iter(&self) -> uint {
+        self.iter
+    }
+}
+
+struct HorizMirrorPattern {
+    out: Position,
+    iter: uint
+}
+impl IterativePattern for HorizMirrorPattern {
+    fn new(output_dim: Position) -> HorizMirrorPattern {
+        HorizMirrorPattern{ out: output_dim, iter: 2u}
+    }
+
+    fn place(&self, input: uint) -> Position {
+        Position::new((input % self.out.y(), input / self.out.y()))
+    }
+
+    fn step(&self, input: Position) -> Position {
+        let y_bound = self.out.y() / 2;
+        let new_y = (y_bound - 1) + (y_bound - input.y());
+        Position::new((input.x(), new_y))
+    }
+
+    fn required_size(&self) -> uint {
+        self.out.area() / 2
+    }
+
+    fn iter(&self) -> uint {
+        self.iter
+    }
+}
+
+fn tessle(t: &IterativePattern, p: uint, cl: |Position|) {
+    let mut pos = t.place(p);
+    for _ in range(0u, t.iter()) {
+        cl(pos);
+        pos = t.step(pos);
     }
 }
 
@@ -181,26 +238,34 @@ struct Avatar {
 impl Avatar {
     fn new(colors: &Vec<Vec<Color>>, hash: u64, dim: uint, rng: &mut IsaacRng) -> Avatar {
         assert_eq!((dim as f64).log2(),(dim as f64).log2().floor());
-        //TODO; pick mirror mode (selects how many data points are needed (selects mask size))
-        rng.reseed([(hash as u32),((hash >> 32) as u32)]);
 
-        //TODO make input but sqrt of dim
+        //TODO make input but sqrt of bits in hash
         let SIZE = 8u;
-        let windmill: WindmillPattern = IterativePattern::new(Position::new((SIZE, SIZE)));
 
-        let points = windmill.required_size();
-        let bits = (points as f64).log2().floor() as uint;
+        let windmill: &WindmillPattern = &IterativePattern::new(Position::new((SIZE,SIZE)));
+        let vert: &VertMirrorPattern = &IterativePattern::new(Position::new((SIZE,SIZE)));
+        //let horiz: &HorizMirrorPattern = &IterativePattern::new(Position::new((SIZE,SIZE)));
+        let patterns = vec!(
+                windmill as &IterativePattern,
+                vert as &IterativePattern,
+         //       horiz as &IterativePattern,
+        );
+        let pattern = rng.choose(patterns.as_slice()).unwrap();
+
+        let points = pattern.required_size();
+        //let bits = (points as f64).log2().floor() as uint;
+        let bits = 32;
         let color_mask = BoundedMask::new(rng, colors, bits, 0);
-
-        let pallete = Vec::from_fn(points, |i| {
-            color_mask.select((hash >> (i * bits)) as uint)
+        let pallete = Vec::from_fn(points, |_| {
+            rng.reseed(vec!(rng.next_u32(), rng.next_u32()).as_slice());
+            color_mask.select(rng.next_u32() as uint)
         });
 
-        let mut mini = Vec::from_fn(SIZE*SIZE, |i| {
-            Color::new("rgb888", i * 167_777u)
+        let mut mini = Vec::from_fn(SIZE*SIZE, |_| {
+            Color::new("rgb888", 0)
         });
         for i in range(0u, points) {
-            windmill.tessle(i, |p| {
+            tessle(*pattern, i, |p| {
                 let sp: SquarePosition = SquarePosition::from_position(SIZE, p);
                 let p = mini.get_mut(sp.index());
                 *p = pallete[i].clone();
@@ -221,11 +286,14 @@ impl Avatar {
 }
 
 fn main() {
-    let mut color_pairs = vec![
+    let color_pairs = vec![
         vec![Color::new("rgb888", 0xEDB231u),Color::new("rgb888", 0x4AF0A9u)],
         vec![Color::new("rgb888", 0x77E761u),Color::new("rgb888", 0xA1DFE1u)],
         vec![Color::new("rgb888", 0x8E14BAu),Color::new("rgb888", 0x4AF0A9u)],
-        vec![Color::new("rgb888", 0x0D5799u),Color::new("rgb888", 0xFF4C22u)]
+        vec![Color::new("rgb888", 0x0D5799u),Color::new("rgb888", 0xFF4C22u)],
+        vec![Color::new("rgb888", 0x93648Du),Color::new("rgb888", 0xF16745u)],
+        vec![Color::new("rgb888", 0xFFC65Du),Color::new("rgb888", 0x404040u)],
+        vec![Color::new("rgb888", 0x666699u),Color::new("rgb888", 0xBEF243u)],
     ];
 
     let args = os::args();
@@ -236,7 +304,7 @@ fn main() {
         arg.hash(&mut sip);
         let hash = sip.result();
 
-        let mut rng = IsaacRng::new_unseeded();
+        let mut rng: IsaacRng = SeedableRng::from_seed(vec!((hash as u32),((hash >> 32) as u32)).as_slice());
         let avatar = Avatar::new(&color_pairs, hash, 128, &mut rng);
         sip.reset();
 
